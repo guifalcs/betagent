@@ -1,4 +1,4 @@
-"""Coleta fixtures e estatisticas de futebol via API-Football para validacao local."""
+"""Coleta estatisticas de futebol e MMA para validacao local no projeto."""
 
 from __future__ import annotations
 
@@ -9,11 +9,14 @@ from zoneinfo import ZoneInfo
 from typing import Any
 
 import requests
+from bs4 import BeautifulSoup, Tag
 
 from config.settings import API_FOOTBALL_KEY
 
 
 BASE_URL = "https://v3.football.api-sports.io"
+UFCSTATS_UPCOMING_URL = "http://www.ufcstats.com/statistics/events/upcoming"
+UFCSTATS_USER_AGENT = "Mozilla/5.0"
 REQUEST_TIMEOUT = 30
 LEAGUES = [
     {"id": 71, "name": "Brasileirao", "season": 2025},
@@ -32,6 +35,11 @@ def _build_headers() -> dict[str, str]:
     return {
         "x-apisports-key": API_FOOTBALL_KEY or "",
     }
+
+
+def _build_ufcstats_headers() -> dict[str, str]:
+    """Monta os headers padrao para scraping do UFCStats."""
+    return {"User-Agent": UFCSTATS_USER_AGENT}
 
 
 def _print_remaining_requests(headers: requests.structures.CaseInsensitiveDict[str]) -> None:
@@ -284,10 +292,180 @@ def _print_fixture_summary(fixture: dict[str, Any]) -> None:
         )
 
 
+def _fetch_ufcstats_page(url: str) -> BeautifulSoup:
+    """Busca uma pagina do UFCStats e retorna o HTML parseado."""
+    response = requests.get(
+        url,
+        headers=_build_ufcstats_headers(),
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+    return BeautifulSoup(response.text, "html.parser")
+
+
+def _extract_text_value(text: str) -> str:
+    """Extrai o valor textual apos os dois pontos."""
+    parts = text.split(":", maxsplit=1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    return text.strip()
+
+
+def _parse_upcoming_event() -> tuple[str, str]:
+    """Busca o proximo evento do UFCStats."""
+    soup = _fetch_ufcstats_page(UFCSTATS_UPCOMING_URL)
+    event_link = soup.select_one('a[href*="event-details/"]')
+    if event_link is None:
+        raise ValueError("Nao foi possivel encontrar o proximo evento no UFCStats.")
+
+    event_url = str(event_link.get("href", "")).strip()
+    event_name = event_link.get_text(" ", strip=True)
+    if not event_url or not event_name:
+        raise ValueError("O proximo evento do UFCStats veio sem nome ou URL.")
+    return event_name, event_url
+
+
+def _parse_event_date(event_soup: BeautifulSoup) -> str:
+    """Extrai a data do evento a partir da pagina do card."""
+    for item in event_soup.select(".b-list__box-list-item"):
+        text = item.get_text(" ", strip=True)
+        if text.startswith("Date:"):
+            return _extract_text_value(text)
+    return ""
+
+
+def _parse_event_fights(event_soup: BeautifulSoup) -> list[tuple[str, str]]:
+    """Extrai os links dos lutadores de cada luta do card."""
+    fights: list[tuple[str, str]] = []
+    rows = event_soup.select("tr.b-fight-details__table-row")
+    for row in rows:
+        fighter_links = row.select('a[href*="fighter-details/"]')
+        if len(fighter_links) < 2:
+            continue
+
+        fighter_a_url = str(fighter_links[0].get("href", "")).strip()
+        fighter_b_url = str(fighter_links[1].get("href", "")).strip()
+        if fighter_a_url and fighter_b_url:
+            fights.append((fighter_a_url, fighter_b_url))
+    return fights
+
+
+def _parse_fighter_stat_items(fighter_soup: BeautifulSoup) -> dict[str, str]:
+    """Monta um mapa label->valor para os itens de stats do lutador."""
+    stats: dict[str, str] = {}
+    for item in fighter_soup.select(".b-list__box-list-item"):
+        if not isinstance(item, Tag):
+            continue
+        text = item.get_text(" ", strip=True)
+        if not text or ":" not in text:
+            continue
+        label, value = text.split(":", maxsplit=1)
+        stats[label.strip().lower()] = value.strip()
+    return stats
+
+
+def _parse_fighter_details(fighter_url: str) -> dict[str, Any]:
+    """Extrai os detalhes normalizados de um lutador do UFCStats."""
+    fighter_soup = _fetch_ufcstats_page(fighter_url)
+    stats_map = _parse_fighter_stat_items(fighter_soup)
+
+    name_node = fighter_soup.select_one(".b-content__title-highlight")
+    record_node = fighter_soup.select_one(".b-content__title-record")
+
+    name = name_node.get_text(" ", strip=True) if name_node else ""
+    raw_record = record_node.get_text(" ", strip=True) if record_node else ""
+
+    return {
+        "name": name,
+        "record": raw_record.replace("Record:", "").strip(),
+        "height": stats_map.get("height", ""),
+        "weight": stats_map.get("weight", ""),
+        "reach": stats_map.get("reach", ""),
+        "stance": stats_map.get("stance", stats_map.get("stance ", "")),
+        "slpm": _to_float(stats_map.get("slpm")),
+        "str_acc": stats_map.get("str. acc.", ""),
+        "sapm": _to_float(stats_map.get("sapm")),
+        "str_def": stats_map.get("str. def", ""),
+        "td_avg": _to_float(stats_map.get("td avg.")),
+        "td_acc": stats_map.get("td acc.", ""),
+        "td_def": stats_map.get("td def.", ""),
+        "sub_avg": _to_float(stats_map.get("sub. avg.")),
+    }
+
+
+def _print_mma_fight_summary(fight: dict[str, Any]) -> None:
+    """Printa um resumo legivel de uma luta do card."""
+    fighter_a = fight["fighter_a"]
+    fighter_b = fight["fighter_b"]
+    print(
+        f"\n[BetAgent][stats][mma] {fight['event']} | {fight['event_date']}"
+    )
+    print(
+        "[BetAgent][stats][mma]   "
+        f"{fighter_a['name']} ({fighter_a['record']}) | "
+        f"SLpM: {fighter_a['slpm']} | SApM: {fighter_a['sapm']} | "
+        f"TD Avg: {fighter_a['td_avg']} | Sub Avg: {fighter_a['sub_avg']}"
+    )
+    print(
+        "[BetAgent][stats][mma]   "
+        f"{fighter_b['name']} ({fighter_b['record']}) | "
+        f"SLpM: {fighter_b['slpm']} | SApM: {fighter_b['sapm']} | "
+        f"TD Avg: {fighter_b['td_avg']} | Sub Avg: {fighter_b['sub_avg']}"
+    )
+
+
+def _run_mma() -> list[dict[str, Any]] | None:
+    """Coleta o proximo card do UFCStats com stats dos dois lutadores por luta."""
+    try:
+        event_name, event_url = _parse_upcoming_event()
+        print(f"[BetAgent][stats][mma] Buscando proximo card: {event_name}")
+
+        event_soup = _fetch_ufcstats_page(event_url)
+        event_date = _parse_event_date(event_soup)
+        fight_links = _parse_event_fights(event_soup)
+        if not fight_links:
+            print("[BetAgent][stats][mma] Nenhuma luta encontrada no proximo card.")
+            return []
+
+        fighter_cache: dict[str, dict[str, Any]] = {}
+        fights: list[dict[str, Any]] = []
+
+        for fighter_a_url, fighter_b_url in fight_links:
+            try:
+                if fighter_a_url not in fighter_cache:
+                    fighter_cache[fighter_a_url] = _parse_fighter_details(fighter_a_url)
+                if fighter_b_url not in fighter_cache:
+                    fighter_cache[fighter_b_url] = _parse_fighter_details(fighter_b_url)
+
+                fight = {
+                    "event": event_name,
+                    "event_date": event_date,
+                    "fighter_a": fighter_cache[fighter_a_url],
+                    "fighter_b": fighter_cache[fighter_b_url],
+                }
+                fights.append(fight)
+                _print_mma_fight_summary(fight)
+            except requests.RequestException as exc:
+                print(f"[BetAgent][stats][mma] Falha ao processar luta do card: {exc}")
+                continue
+            except Exception as exc:
+                print(f"[BetAgent][stats][mma] Erro inesperado em uma luta: {exc}")
+                continue
+
+        print(f"\n[BetAgent][stats][mma] Total de lutas coletadas: {len(fights)}")
+        return fights
+    except Exception as exc:
+        print(f"[BetAgent][stats][mma] Falha total no scraping do UFCStats: {exc}")
+        return None
+
+
 def run(sport: str = "football") -> list[dict[str, Any]] | None:
     """Busca fixtures futuros e estatisticas de futebol pela API-Football."""
+    if sport == "mma":
+        return _run_mma()
+
     if sport != "football":
-        print(f"[BetAgent][stats] Esporte '{sport}' ainda nao suportado. MMA vira depois.")
+        print(f"[BetAgent][stats] Esporte '{sport}' ainda nao suportado.")
         return None
 
     try:
