@@ -5,7 +5,8 @@
 - [ ] Definir schema inicial e enums PostgreSQL
 - [ ] Implementar carregamento de configurações via `.env`
 - [ ] Implementar coletores de odds, stats, social, news e resultados
-- [ ] Implementar motor de probabilidade e detector de valor
+- [x] Implementar motor de probabilidade (probability_engine.py — Poisson bivariado + score composto MMA)
+- [x] Implementar detector de valor (value_detector.py — edge + Kelly por outcome)
 - [ ] Implementar cálculo de stake com critério de Kelly
 - [ ] Implementar fluxo de relatório diário
 - [ ] Implementar fluxo de revalidação pré-jogo
