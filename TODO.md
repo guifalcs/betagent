@@ -13,5 +13,5 @@
 - [x] Implementar fluxo de post-mortem (post_mortem.py)
 - [x] Implementar post_mortem_engine.py (cruza bets com resultados reais, calcula ROI e acurácia)
 - [x] Implementar geração de relatórios e envio para Telegram (report_generator.py + telegram_sender.py)
-- [ ] Configurar workflows do GitHub Actions
+- [x] Configurar workflows do GitHub Actions (daily 8h UTC, revalidate manual, post-mortem 23h UTC)
 - [ ] Integrar automações com N8N e Apify

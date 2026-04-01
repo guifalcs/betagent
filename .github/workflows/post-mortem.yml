@@ -1,2 +1,43 @@
-name: Post Mortem
-# TODO: implementar
+name: Post-Mortem Analysis
+
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Data de análise (YYYY-MM-DD). Padrão: hoje."
+        required: false
+        type: string
+
+jobs:
+  post-mortem:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve date
+        id: date
+        run: echo "value=${{ inputs.date || '$(date +%Y-%m-%d)' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run post-mortem
+        run: python -m src.main --postmortem --date "${{ steps.date.outputs.value }}"
