@@ -4,6 +4,8 @@ import copy
 import json
 from typing import Any
 
+from src.analysis.clv import calculate_clv
+
 
 def _normalize_text(value: str | None) -> str:
     """Normaliza textos para comparacoes case-insensitive."""
@@ -102,6 +104,8 @@ def run(
         unmatched_bets = 0
         total_staked = 0.0
         total_pnl = 0.0
+        bets_with_clv = 0
+        beat_closing_line_count = 0
 
         for bet in enriched_bets:
             matched_result = _find_matching_result(bet, results)
@@ -149,11 +153,27 @@ def run(
                 value_bet["pnl_reais"] = round(pnl_reais, 2)
                 value_bet["matched_result"] = matched_result_text
 
+                bet_odd = float(value_bet.get("best_odd", 0.0) or 0.0)
+                closing_odd = float(value_bet.get("closing_odds", 0.0) or 0.0)
+                if closing_odd > 1.0:
+                    clv = calculate_clv(bet_odd, closing_odd)
+                    value_bet["clv_pct"] = clv.get("clv_pct")
+                    value_bet["beat_closing_line"] = clv.get("beat_closing")
+                    bets_with_clv += 1
+                    if value_bet["beat_closing_line"] is True:
+                        beat_closing_line_count += 1
+                else:
+                    value_bet["clv_pct"] = None
+                    value_bet["beat_closing_line"] = None
+
         total_staked = round(total_staked, 2)
         total_pnl = round(total_pnl, 2)
         roi_pct = round((total_pnl / total_staked * 100), 2) if total_staked > 0 else 0.0
         decided_bets = won_bets + lost_bets
         accuracy = round((won_bets / decided_bets), 4) if decided_bets > 0 else 0.0
+        clv_beat_rate = (
+            beat_closing_line_count / bets_with_clv if bets_with_clv > 0 else None
+        )
 
         return {
             "bets": enriched_bets,
@@ -166,6 +186,9 @@ def run(
                 "total_pnl": total_pnl,
                 "roi_pct": roi_pct,
                 "accuracy": accuracy,
+                "bets_with_clv": bets_with_clv,
+                "beat_closing_line_count": beat_closing_line_count,
+                "clv_beat_rate": clv_beat_rate,
             },
             "method": "post_mortem",
         }
