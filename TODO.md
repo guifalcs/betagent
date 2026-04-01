@@ -8,8 +8,9 @@
 - [x] Implementar motor de probabilidade (probability_engine.py — Poisson bivariado + score composto MMA)
 - [x] Implementar detector de valor (value_detector.py — edge + Kelly por outcome)
 - [x] Implementar cálculo de stake com critério de Kelly (kelly.py — Kelly fracionado configurável)
-- [ ] Implementar fluxo de relatório diário
-- [ ] Implementar fluxo de revalidação pré-jogo
+- [x] Implementar fluxo de relatório diário (daily_report.py — pipeline completo coleta→análise→bets)
+- [x] Implementar fluxo de revalidação pré-jogo (revalidate.py)
+- [x] Implementar fluxo de post-mortem (post_mortem.py)
 - [x] Implementar post_mortem_engine.py (cruza bets com resultados reais, calcula ROI e acurácia)
 - [ ] Implementar geração de relatórios e envio para Telegram
 - [ ] Configurar workflows do GitHub Actions
