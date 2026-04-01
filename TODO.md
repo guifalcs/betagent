@@ -10,7 +10,7 @@
 - [x] Implementar cálculo de stake com critério de Kelly (kelly.py — Kelly fracionado configurável)
 - [ ] Implementar fluxo de relatório diário
 - [ ] Implementar fluxo de revalidação pré-jogo
-- [ ] Implementar fluxo de post-mortem
+- [x] Implementar post_mortem_engine.py (cruza bets com resultados reais, calcula ROI e acurácia)
 - [ ] Implementar geração de relatórios e envio para Telegram
 - [ ] Configurar workflows do GitHub Actions
 - [ ] Integrar automações com N8N e Apify
