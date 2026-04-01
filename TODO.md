@@ -7,7 +7,7 @@
 - [ ] Implementar coletores de odds, stats, social, news e resultados
 - [x] Implementar motor de probabilidade (probability_engine.py — Poisson bivariado + score composto MMA)
 - [x] Implementar detector de valor (value_detector.py — edge + Kelly por outcome)
-- [ ] Implementar cálculo de stake com critério de Kelly
+- [x] Implementar cálculo de stake com critério de Kelly (kelly.py — Kelly fracionado configurável)
 - [ ] Implementar fluxo de relatório diário
 - [ ] Implementar fluxo de revalidação pré-jogo
 - [ ] Implementar fluxo de post-mortem
