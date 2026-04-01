@@ -12,6 +12,6 @@
 - [x] Implementar fluxo de revalidação pré-jogo (revalidate.py)
 - [x] Implementar fluxo de post-mortem (post_mortem.py)
 - [x] Implementar post_mortem_engine.py (cruza bets com resultados reais, calcula ROI e acurácia)
-- [ ] Implementar geração de relatórios e envio para Telegram
+- [x] Implementar geração de relatórios e envio para Telegram (report_generator.py + telegram_sender.py)
 - [ ] Configurar workflows do GitHub Actions
 - [ ] Integrar automações com N8N e Apify
