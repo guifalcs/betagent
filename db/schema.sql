@@ -76,6 +76,19 @@ CREATE TABLE bankroll_history (
   note          TEXT
 );
 
+-- Features normalizadas extraídas pelos coletores por operação
+CREATE TABLE features (
+  id            BIGSERIAL PRIMARY KEY,
+  operation_id  TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sport         sport_type NOT NULL,
+  feature_name  TEXT NOT NULL,
+  feature_value NUMERIC(12,6) NOT NULL,
+  raw_value     TEXT,
+  source        TEXT,
+  notes         TEXT
+);
+
 -- Log de erros dos componentes
 CREATE TABLE error_logs (
   id            BIGSERIAL PRIMARY KEY,

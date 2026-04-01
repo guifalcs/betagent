@@ -14,4 +14,5 @@
 - [x] Implementar post_mortem_engine.py (cruza bets com resultados reais, calcula ROI e acurácia)
 - [x] Implementar geração de relatórios e envio para Telegram (report_generator.py + telegram_sender.py)
 - [x] Configurar workflows do GitHub Actions (daily 8h UTC, revalidate manual, post-mortem 23h UTC)
+- [x] Implementar normalizers.py (safe_float, safe_int, normalize_pct, parse_record) + tabela features no schema
 - [ ] Integrar automações com N8N e Apify
