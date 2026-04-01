@@ -1,159 +1,194 @@
-"""Cálculo de stake em reais usando Kelly fracionado."""
+"""Calculo de stake com criterio de Kelly fracionado."""
 
 from __future__ import annotations
 
 import json
-from copy import deepcopy
+import math
 from typing import Any
 
-KELLY_FRACTION_DEFAULT: float = 0.25
+from config.settings import (
+    KELLY_FRACTION_GREEN,
+    KELLY_FRACTION_YELLOW,
+    KELLY_MAX_STAKE_PCT,
+    KELLY_MIN_STAKE_PCT,
+    KELLY_ROUND_TO,
+)
 
 
-def _stake(bankroll: float, kelly_fraction: float, kelly_scale: float) -> float:
-    """Calcula o valor em reais a ser apostado para uma bet."""
-    raw_stake: float = bankroll * kelly_fraction * kelly_scale
-    clamped_stake: float = max(0.0, min(raw_stake, bankroll))
-    return round(clamped_stake, 2)
+def _round_to_nearest(value: float, nearest: float) -> float:
+    """Arredonda um valor para o multiplo mais proximo informado."""
+    if nearest <= 0:
+        return value
+    return math.floor(value / nearest + 0.5) * nearest
+
+
+def calculate_kelly(
+    p_estimated: float,
+    odds: float,
+    bankroll: float,
+    signal: str,
+) -> dict[str, float | str]:
+    """Calcula a stake recomendada usando Kelly fracionado com limites."""
+    try:
+        signal_normalized = signal.strip().lower()
+
+        if signal_normalized == "red":
+            return {
+                "kelly_full_pct": 0.0,
+                "kelly_fraction": 0.0,
+                "kelly_fractional_pct": 0.0,
+                "kelly_capped_pct": 0.0,
+                "stake": 0.0,
+                "stake_reason": "Sinal vermelho",
+            }
+
+        if not (0 < p_estimated < 1) or odds <= 1 or bankroll <= 0:
+            return {
+                "kelly_full_pct": 0.0,
+                "kelly_fraction": 0.0,
+                "kelly_fractional_pct": 0.0,
+                "kelly_capped_pct": 0.0,
+                "stake": 0.0,
+                "stake_reason": "Input invalido",
+            }
+
+        kelly_full = (p_estimated * odds - 1) / (odds - 1)
+        if kelly_full <= 0:
+            return {
+                "kelly_full_pct": round(kelly_full, 6),
+                "kelly_fraction": 0.0,
+                "kelly_fractional_pct": 0.0,
+                "kelly_capped_pct": 0.0,
+                "stake": 0.0,
+                "stake_reason": "Kelly negativo",
+            }
+
+        fraction = (
+            KELLY_FRACTION_GREEN
+            if signal_normalized == "green"
+            else KELLY_FRACTION_YELLOW
+        )
+        kelly_fractional = kelly_full * fraction
+        kelly_capped = min(kelly_fractional, KELLY_MAX_STAKE_PCT)
+
+        if kelly_capped < KELLY_MIN_STAKE_PCT:
+            return {
+                "kelly_full_pct": round(kelly_full, 6),
+                "kelly_fraction": fraction,
+                "kelly_fractional_pct": round(kelly_fractional, 6),
+                "kelly_capped_pct": round(kelly_capped, 6),
+                "stake": 0.0,
+                "stake_reason": "Kelly abaixo do minimo",
+            }
+
+        stake_raw = bankroll * kelly_capped
+        stake = _round_to_nearest(stake_raw, KELLY_ROUND_TO)
+        stake = max(0.0, min(stake, bankroll))
+
+        return {
+            "kelly_full_pct": round(kelly_full, 6),
+            "kelly_fraction": fraction,
+            "kelly_fractional_pct": round(kelly_fractional, 6),
+            "kelly_capped_pct": round(kelly_capped, 6),
+            "stake": round(stake, 2),
+            "stake_reason": "Stake calculada",
+        }
+    except Exception as exc:
+        print(f"[BetAgent][kelly] erro ao calcular Kelly: {exc}")
+        return {
+            "kelly_full_pct": 0.0,
+            "kelly_fraction": 0.0,
+            "kelly_fractional_pct": 0.0,
+            "kelly_capped_pct": 0.0,
+            "stake": 0.0,
+            "stake_reason": "Falha no calculo",
+        }
 
 
 def run(
-    value_detection: dict[str, Any],
+    value_detection: dict[str, Any] | None,
     bankroll: float,
-    kelly_scale: float = KELLY_FRACTION_DEFAULT,
-) -> dict[str, Any] | None:
-    """Enriquece value bets com stake em reais calculado via Kelly fracionado."""
+    kelly_scale: float | None,
+) -> dict[str, float | str]:
+    """Mantem compatibilidade com a interface antiga do modulo."""
     try:
-        if bankroll <= 0:
-            print("[BetAgent][kelly] bankroll inválido para cálculo de stake")
-            return None
+        if not value_detection:
+            return {
+                "kelly_full_pct": 0.0,
+                "kelly_fraction": 0.0,
+                "kelly_fractional_pct": 0.0,
+                "kelly_capped_pct": 0.0,
+                "stake": 0.0,
+                "stake_reason": "Input invalido",
+            }
 
-        if kelly_scale < 0:
-            print("[BetAgent][kelly] kelly_scale inválido para cálculo de stake")
-            return None
+        probability_keys = ("p_estimated", "estimated_probability", "probability", "p")
+        odds_keys = ("odds", "best_odds", "price")
+        signal_keys = ("signal", "value_signal", "classification")
 
-        value_bets_raw: Any = value_detection.get("value_bets")
-        if not isinstance(value_bets_raw, list):
-            print("[BetAgent][kelly] value_bets ausente ou inválido")
-            return None
-
-        enriched_detection: dict[str, Any] = deepcopy(value_detection)
-        enriched_bets: list[dict[str, Any]] = []
-        total_exposure: float = 0.0
-
-        for bet_raw in value_bets_raw:
-            if not isinstance(bet_raw, dict):
-                print("[BetAgent][kelly] value_bet inválida encontrada")
-                return None
-
-            bet: dict[str, Any] = deepcopy(bet_raw)
-            bet_kelly_fraction: Any = bet.get("kelly_fraction")
-            if bet_kelly_fraction is None:
-                print("[BetAgent][kelly] kelly_fraction ausente em value_bet")
-                return None
-
-            stake_reais: float = _stake(
-                bankroll=float(bankroll),
-                kelly_fraction=float(bet_kelly_fraction),
-                kelly_scale=float(kelly_scale),
-            )
-            bet["stake_reais"] = stake_reais
-            total_exposure += stake_reais
-            enriched_bets.append(bet)
-
-        total_exposure = round(total_exposure, 2)
-        exposure_pct: float = round((total_exposure / bankroll) * 100, 2)
-
-        enriched_detection["value_bets"] = enriched_bets
-        enriched_detection["bankroll"] = round(float(bankroll), 2)
-        enriched_detection["kelly_scale"] = round(float(kelly_scale), 4)
-        enriched_detection["total_exposure"] = total_exposure
-        enriched_detection["exposure_pct"] = exposure_pct
-
-        print(
-            "[BetAgent][kelly] cálculo concluído "
-            f"para event_id={enriched_detection.get('event_id')} "
-            f"com exposição total de R$ {total_exposure:.2f}"
+        p_estimated = next(
+            (
+                float(value_detection[key])
+                for key in probability_keys
+                if value_detection.get(key) is not None
+            ),
+            0.0,
         )
-        return enriched_detection
+        odds = next(
+            (
+                float(value_detection[key])
+                for key in odds_keys
+                if value_detection.get(key) is not None
+            ),
+            0.0,
+        )
+        signal = next(
+            (
+                str(value_detection[key])
+                for key in signal_keys
+                if value_detection.get(key) is not None
+            ),
+            "yellow",
+        )
+
+        result = calculate_kelly(
+            p_estimated=p_estimated,
+            odds=odds,
+            bankroll=bankroll,
+            signal=signal,
+        )
+
+        if kelly_scale is not None:
+            result["kelly_scale"] = float(kelly_scale)
+
+        return result
     except Exception as exc:
-        print(f"[BetAgent][kelly] falha ao calcular stakes: {exc}")
-        return None
+        print(f"[BetAgent][kelly] erro no run: {exc}")
+        return {
+            "kelly_full_pct": 0.0,
+            "kelly_fraction": 0.0,
+            "kelly_fractional_pct": 0.0,
+            "kelly_capped_pct": 0.0,
+            "stake": 0.0,
+            "stake_reason": "Falha no calculo",
+        }
 
 
 if __name__ == "__main__":
-    football_value_detection: dict[str, Any] = {
-        "event_id": "football-001",
-        "home_team": "Flamengo",
-        "away_team": "Palmeiras",
-        "sport": "football",
-        "value_bets": [
-            {
-                "outcome": "home_win",
-                "best_odd": 2.15,
-                "bookmaker": "Book A",
-                "implied_prob": 0.4651,
-                "model_prob": 0.53,
-                "edge": 0.0649,
-                "kelly_fraction": 0.12,
-            },
-            {
-                "outcome": "over_2_5",
-                "best_odd": 1.95,
-                "bookmaker": "Book B",
-                "implied_prob": 0.5128,
-                "model_prob": 0.58,
-                "edge": 0.0672,
-                "kelly_fraction": 0.08,
-            },
-        ],
-        "method": "ensemble_poisson",
-    }
-
-    mma_value_detection: dict[str, Any] = {
-        "event_id": "mma-001",
-        "fighter_a": "Charles Oliveira",
-        "fighter_b": "Islam Makhachev",
-        "sport": "mma",
-        "value_bets": [
-            {
-                "outcome": "fighter_a_win",
-                "best_odd": 2.75,
-                "bookmaker": "Book C",
-                "implied_prob": 0.3636,
-                "model_prob": 0.42,
-                "edge": 0.0564,
-                "kelly_fraction": 0.07,
-            }
-        ],
-        "method": "elo_mma_v1",
-    }
-
-    scenarios: list[tuple[str, dict[str, Any], float, float]] = [
-        (
-            "football_default",
-            football_value_detection,
-            1000.00,
-            KELLY_FRACTION_DEFAULT,
-        ),
-        ("football_half_kelly", football_value_detection, 1000.00, 0.5),
-        ("mma_default", mma_value_detection, 500.00, KELLY_FRACTION_DEFAULT),
-        ("mma_half_kelly", mma_value_detection, 500.00, 0.5),
+    cenarios = [
+        {"p_estimated": 0.62, "odds": 1.92, "bankroll": 100.0, "signal": "green"},
+        {"p_estimated": 0.58, "odds": 2.10, "bankroll": 100.0, "signal": "yellow"},
+        {"p_estimated": 0.45, "odds": 1.80, "bankroll": 100.0, "signal": "green"},
+        {"p_estimated": 0.70, "odds": 1.50, "bankroll": 100.0, "signal": "red"},
+        {"p_estimated": 0.62, "odds": 1.92, "bankroll": 20.0, "signal": "green"},
+        {"p_estimated": 0.53, "odds": 2.00, "bankroll": 100.0, "signal": "green"},
     ]
 
-    for scenario_name, detection, bankroll_value, scale in scenarios:
-        result: dict[str, Any] | None = run(
-            value_detection=detection,
-            bankroll=bankroll_value,
-            kelly_scale=scale,
-        )
-        print(f"[BetAgent][kelly] cenário={scenario_name}")
-        print(
-            json.dumps(
-                {
-                    "scenario": scenario_name,
-                    "result": result,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+    for indice, cenario in enumerate(cenarios, start=1):
+        resultado = calculate_kelly(**cenario)
+        payload = {
+            "cenario": indice,
+            **cenario,
+            "resultado": resultado,
+        }
+        print(f"[BetAgent][kelly] {json.dumps(payload, ensure_ascii=False, indent=2)}")
