@@ -64,12 +64,46 @@ def _find_event_by_name(events: list[dict[str, Any]], event_name: str) -> dict[s
     return None
 
 
+def _revalidation_status(original_odd: float, current_odd: float) -> str:
+    """Classifica o status da revalidacao com base na variacao percentual da odd."""
+    variation_pct = (current_odd / original_odd - 1) * 100
+    if abs(variation_pct) < 5:
+        return "GO"
+    if abs(variation_pct) <= 10:
+        return "ATENCAO"
+    return "NO-GO"
+
+
+def _print_revalidation_report(
+    event_name: str,
+    original_odd: float,
+    current_odd: float,
+    edge: float,
+    kelly_result: Any,
+) -> None:
+    """Imprime um resumo formatado da revalidacao da oportunidade."""
+    variation_pct = (current_odd / original_odd - 1) * 100
+    status = _revalidation_status(original_odd, current_odd)
+    stake = kelly_result.get("stake", 0.0) if isinstance(kelly_result, dict) else 0.0
+    emoji = {"GO": "✅", "ATENCAO": "⚠️", "NO-GO": "❌"}.get(status, "❌")
+
+    print(f"[BetAgent] Revalidacao: {event_name}")
+    print(f"Odd original (relatorio): {original_odd}")
+    print(f"Odd atual:                {current_odd}")
+    print(f"Variacao:                 {variation_pct:+.1f}%")
+    print(f"Edge recalculado:         {edge:+.1f}%")
+    print(f"Kelly recalculado:        R${stake:.2f}")
+    print(f"Status:                   {emoji} {status}")
+
+
 def run(
     event_name: str,
     probs: dict[str, Any],
     bankroll: float = 1000.0,
     kelly_scale: float = 0.25,
     sport: str = "football",
+    manual_odd: float | None = None,
+    original_odd: float | None = None,
 ) -> dict[str, Any] | None:
     try:
         print("[BetAgent][flow] Iniciando fluxo revalidate.")
@@ -92,6 +126,31 @@ def run(
         kelly_result = kelly.run(value_detection, bankroll, kelly_scale)
         if not isinstance(kelly_result, dict):
             return None
+
+        current_odd = manual_odd
+        if current_odd is None:
+            value_bets = kelly_result.get("value_bets")
+            if isinstance(value_bets, list) and value_bets:
+                first_value_bet = value_bets[0]
+                if isinstance(first_value_bet, dict):
+                    odd_value = first_value_bet.get("odd")
+                    if isinstance(odd_value, int | float):
+                        current_odd = float(odd_value)
+
+        if current_odd is not None and original_odd is not None:
+            variation_pct = (current_odd / original_odd - 1) * 100
+            edge = value_detection.get("edge", 0.0) if isinstance(value_detection, dict) else 0.0
+            edge_value = float(edge) if isinstance(edge, int | float) else 0.0
+            _print_revalidation_report(
+                event_name=event_name,
+                original_odd=original_odd,
+                current_odd=current_odd,
+                edge=edge_value,
+                kelly_result=kelly_result,
+            )
+            status = _revalidation_status(original_odd, current_odd)
+            kelly_result["revalidation_status"] = status
+            kelly_result["odd_variation_pct"] = round(variation_pct, 2)
 
         kelly_result["status"] = "revalidated"
 

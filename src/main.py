@@ -41,10 +41,10 @@ def run_daily() -> None:
         print(f"[BetAgent] Falha no fluxo diário: {exc}")
 
 
-def run_check(event: str) -> None:
+def run_check(event: str, odd: float | None = None) -> None:
     """Executa a revalidação pré-aposta para um evento."""
     try:
-        result = revalidate.run(event_name=event, probs={}, bankroll=1000.0)
+        result = revalidate.run(event_name=event, probs={}, bankroll=1000.0, manual_odd=odd)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except Exception as exc:
         print(f"[BetAgent] Falha na revalidação para {event}: {exc}")
@@ -84,6 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="Data de referência para o post-mortem no formato ISO (YYYY-MM-DD).",
     )
+    parser.add_argument(
+        "--odd",
+        metavar="ODD",
+        type=float,
+        default=None,
+        help="Odd exata atual na casa de apostas para revalidacao.",
+    )
     return parser
 
 
@@ -101,7 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.check:
-        run_check(args.check)
+        run_check(args.check, odd=args.odd)
         return 0
 
     if args.postmortem:
